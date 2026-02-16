@@ -1,5 +1,4 @@
-import requests
-from backend.spotify_client import get_top_artists
+from backend.clients.spotify_client import SpotifyClient
 
 MOOD_QUERIES = {
     "happy": ["happy pop", "feel good pop"],
@@ -8,27 +7,13 @@ MOOD_QUERIES = {
     "energetic": ["workout dance", "high energy edm"],
 }
 
-SPOTIFY_SEARCH_URL = "https://api.spotify.com/v1/search"
 
-
-def search_tracks(access_token: str, query: str, limit: int = 20):
-    headers = {
-        "Authorization": f"Bearer {access_token}"
-    }
-
-    params = {
-        "q": query,
-        "type": "track",
-        "limit": limit
-    }
-
-    res = requests.get(SPOTIFY_SEARCH_URL, headers=headers, params=params)
-    res.raise_for_status()
-
-    return res.json()["tracks"]["items"]
-
-
-def generate_tracks_for_mood(access_token: str, mood: str, max_tracks: int = 30):
+async def generate_tracks_for_mood(
+    access_token: str,
+    mood: str,
+    max_tracks: int = 30,
+):
+    client = SpotifyClient(access_token)
 
     queries = MOOD_QUERIES.get(mood, ["pop"])
     uris = []
@@ -36,7 +21,9 @@ def generate_tracks_for_mood(access_token: str, mood: str, max_tracks: int = 30)
 
     # 1️⃣ Base mood tracks
     for q in queries:
-        tracks = search_tracks(access_token, q)
+        data = await client.search_tracks(q)
+        tracks = data["tracks"]["items"]
+
         for track in tracks:
             uri = track["uri"]
             if uri not in seen:
@@ -45,17 +32,20 @@ def generate_tracks_for_mood(access_token: str, mood: str, max_tracks: int = 30)
 
     # 2️⃣ Personalization boost
     try:
-        top_artists = get_top_artists(access_token)
+        top_data = await client.get_top_artists()
+        top_artists = top_data["items"]
 
         for artist in top_artists:
             artist_query = f"{artist['name']} {mood}"
-            tracks = search_tracks(access_token, artist_query, limit=5)
+            data = await client.search_tracks(artist_query, limit=5)
+            tracks = data["tracks"]["items"]
 
             for track in tracks:
                 uri = track["uri"]
                 if uri not in seen:
                     seen.add(uri)
-                    uris.insert(0, uri)  # boost
+                    uris.insert(0, uri)
+
     except Exception:
         pass  # personalization optional
 
